@@ -4,7 +4,7 @@
 
 #include "pru.hp"
 
-#define PIN_OUT r30.t5 //P(.27
+#define PIN_OUT r30.t5 //P9.27
 #define IMG_WIDTH   60
 
 
