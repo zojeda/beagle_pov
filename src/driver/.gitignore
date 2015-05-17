@@ -1,1 +1,4 @@
 cscope.*
+!beagle_pov.c
+beagle_pov.*
+.beagle_pov.*

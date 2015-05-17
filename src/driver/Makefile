@@ -1,4 +1,4 @@
-KERNEL_SRC?=~/linux-$(shell uname -r)
+LNX?=~/linux-$(shell uname -r)
 obj-m += beagle_pov.o
 
 all:
@@ -14,10 +14,17 @@ install:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules_install
 
 cscope:
-	find $(KERNEL_SRC)/ -name "*.h" -o -name "*.c" > cscope.file
-	find ./ -name "*.h" >> cscope.file
-	find ./ -name "*.c" >> cscope.file
-	cscope -i cscope.file
+	find $(LNX) \
+        -path "$(LNX)/arch/*" ! -path "$(LNX)/arch/arm" -prune -o               \
+        -path "$(LNX)/include/*" -prune -o \
+        -path "$(LNX)/tmp*" -prune -o                                           \
+        -path "$(LNX)/Documentation*" -prune -o                                 \
+        -path "$(LNX)/scripts*" -prune -o                                       \
+        -path "$(LNX)/drivers*" -prune -o                                       \
+            -name "*.[chxsS]" -print > cscope.files
+	find ./ -name "*.h" >> cscope.files
+	find ./ -name "*.c" >> cscope.files
+	cscope -i cscope.files
 
 ctags:
 	find /usr/src/linux-headers-$(shell uname -r)/ -name "*.h" -o -name "*.c" > ctags.file

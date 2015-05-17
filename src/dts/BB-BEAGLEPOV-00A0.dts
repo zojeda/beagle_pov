@@ -9,7 +9,7 @@
 /plugin/;
 
 / {
-	compatible = "ti,beaglebone", "ti,beaglebone-black", "ti,beagle_pov";
+	compatible = "ti,beaglebone", "ti,beaglebone-black", "beagle_pov,beagle_pov";
 
 	/* identification */
 	part-number = "BB-BEAGLEPOV";
@@ -193,7 +193,7 @@
 					pdbg  = <0x22400>;
 
 					firmware-bin;
-					firmware = "pru0_firmware";
+					firmware = "user0blink";
 
 					/* sysevents signaling ring activity (host, pru)*/
 					vring-sysev = <24 25>;
@@ -210,7 +210,7 @@
 			};
 
 			beagle_pov {
-				compatible = "ti,beagle_pov";
+				compatible = "beagle_pov,beagle_pov";
 				status = "okay";
 			};
 		};

@@ -199,7 +199,7 @@ static int pruproc_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id beagle_pov_dt_ids[] = {
-	{ .compatible = "ti,beagle_pov", .data = NULL, },
+	{ .compatible = "beagle_pov,beagle_pov", .data = NULL, },
 	{},
 };
 

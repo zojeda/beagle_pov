@@ -13,7 +13,7 @@ PASM?=pasm
 
 ASSEM_FILES=$(wildcard *.p)
 
-all: firmware $(TARGET)
+all: firmware
 
 
 firmware:
@@ -27,16 +27,8 @@ firmware:
 _DEPS =
 DEPS = $(patsubst %,$(INCDIR_APP_LOADER)/%,$(_DEPS))
 
-_OBJ = beagle_pov.o
-OBJ = $(patsubst %,$(OBJDIR)/%,$(_OBJ))
-
-
-$(OBJDIR)/%.o: %.c $(DEPS)
-	@mkdir -p obj
-	$(CROSS_COMPILE)gcc $(CFLAGS) -c -o $@ $<
-
-$(TARGET): $(OBJ)
-	$(CROSS_COMPILE)gcc $(CFLAGS) -o $(BINDIR)/$@ $^ $(LDFLAGS)
+install:
+	install -m 644 bin/* /lib/firmware
 
 .PHONY: clean
 
