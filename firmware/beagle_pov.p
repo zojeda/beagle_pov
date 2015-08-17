@@ -5,6 +5,7 @@
 #include "pru.hp"
 
 #define PIN_OUT r30.t5 //P(.27
+#define IMG_WIDTH   60
 
 
 #define T0H 40
@@ -13,7 +14,6 @@
 #define T1L 45
 #define T0Latch 5000
 
-#define IMG_WIDTH   9
 
 #define SHARED_RAM  0x100
 #define C_SHARED_RAM  C28
