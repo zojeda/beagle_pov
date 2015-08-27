@@ -24,12 +24,12 @@ START:
         CLR     r0, r0, 4              // to initialize the PRU
         SBCO    r0, REG_SYSCFG, 4, 4  //
 
-        MOV     r0, STEPS_NUMBER
         MOV     r1, 0
+        MOV     r0, STEPS_NUMBER
         LBBO    r1, r0, 0, 4
         MOV     r0, STEPS_DELAY
         LBBO    r2, r0, 0, 4
-            MOV     r1, 1
+//            MOV     r1, 1
 BLINK:
         SET     PIN_OUT
         Delay   r2      
@@ -37,7 +37,7 @@ BLINK:
         Delay   r2      
 
         SUB     r1, r1, 1
-        QBNE    BLINK, r1.w0, 0
+        QBNE    BLINK, r1, 0
 mov r31.b0, PRU0_ARM_INTERRUPT+16
 
 HALT

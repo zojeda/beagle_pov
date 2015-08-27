@@ -7,7 +7,7 @@ import sys
 import pypruss
 
 steps = int(1)
-delay = int(200000)
+delay = int(600000)
 
 pypruss.modprobe()                                  # This only has to be called once pr boot
 pypruss.init()                                      # Init the PRU
