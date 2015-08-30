@@ -1,0 +1,7 @@
+cscope.*
+beagle_pov.*
+.beagle_pov.*
+!beagle_pov.c
+*.swp
+modules.order
+Module.symvers
