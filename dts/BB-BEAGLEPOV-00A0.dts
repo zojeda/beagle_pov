@@ -1,0 +1,66 @@
+/*
+* Copyright (C) 2015 Zacarias F. Ojeda <zojeda@gmail.com>
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2 as
+* published by the Free Software Foundation.
+*/
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "ti,beaglebone", "ti,beaglebone-black";
+
+	/* identification */
+	part-number = "BB-BEAGLEPOV-01";
+	version = "00A0";
+
+	/* state the resources this cape uses */
+	exclusive-use =
+		/* the pin header uses */
+		"P9.23",	/* gpio1_17 : stepper reset*/
+		"P9.25",	/* pru0 pr1_pru0_pru_r30_7: WS2812B led strip data */
+		"P9.27",	/* pru0 pr1_pru0_pru_r30_5: stepper step control*/
+		/* the hardware IP uses */
+		"pru0";
+
+	fragment@0 {
+		target = <&am33xx_pinmux>;
+		__overlay__ {
+
+            beaglepov_ctr_gpio_pins: pinmux_beaglepov_ctr_gpio_pins {
+                pinctrl-single,pins = <
+                    0x044 0x7  /* P9 27 GPIO1_19: gpmc_a1.gpio1[17] | MODE7 | OUTPUT */
+                >;
+            };
+
+			pru_pru_pins: pinmux_pru_pru_pins {
+				pinctrl-single,pins = <
+					0x1ac 0x5	/* P9 25 mcasp0_ahclkx.pr1_pru0_pru_r30_r7, MODE5 | OUTPUT | PULLDOWN  */
+					0x1a4 0x5	/* P9 27 mcasp0_fsr.pr1_pru0_pru_r30_5, MODE5 | OUTPUT | PULLDOWN */
+				>;
+			};
+		};
+	};
+
+    fragment@1 {
+        target = <&ocp>;
+        __overlay__ {
+            beaglepov_ctr_gpio_pins_pinmux {
+                compatible = "bone-pinmux-helper";
+                status = "okay";
+                pinctrl-names = "default";
+                pinctrl-0 = <&beaglepov_ctr_gpio_pins>;
+            };
+        };
+    };
+	fragment@2 {
+		target = <&pruss>;
+		__overlay__ {
+			status = "okay";
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&pru_pru_pins>;
+		};
+	};
+};
