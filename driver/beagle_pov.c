@@ -1,3 +1,4 @@
+#include <linux/device.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/fs.h>
@@ -12,15 +13,61 @@
 
 #define MODULE_NAME "beaglepov"
 #define BASE_SHARED_PRU_MEM  0x4a310000UL
+#define GPIO1 0x4804C000
+#define GPIO_CLEARDATAOUT 0x190
+#define GPIO_SETDATAOUT 0x194
+#define GPIO_DATAOUT 0x13c
+#define GPIO_OE 0x134
 #define SHARED_PRU_MEM_SIZE  60
+
+#define STEPPER_RESET_BIT 1<<17
 //#define SHARED_PRU_MEM_SIZE  12*1024
 
 void __iomem *shared_pru_mem = 0;
+void __iomem *gpio1;
 
 bool ppm_mode = false;
 
 
 char* P6 = "P6";
+
+static inline void set_hi_gpio1(u32 pin) {
+    iowrite32(pin, gpio1+GPIO_SETDATAOUT );
+}
+
+static inline void set_low_gpio1(u32 pin) {
+    iowrite32(pin, gpio1+GPIO_CLEARDATAOUT );
+}
+
+
+
+/* This sysfs entry handles the stepper reset cmd*/
+static ssize_t sys_stepper_reset_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count) {
+    printk(KERN_INFO  "%s: stepper reset : %s\n", MODULE_NAME, buf);
+
+    if(sysfs_streq("1", buf)) 
+     set_hi_gpio1(STEPPER_RESET_BIT);
+    else if(sysfs_streq("0", buf))
+     set_low_gpio1(STEPPER_RESET_BIT);
+    else 
+      return -EINVAL;
+      
+     return count;
+};
+static ssize_t sys_stepper_reset_show(struct device* dev, struct device_attribute* attr, char* buf) {
+    int pin_status;
+    u32 pins_out = ioread32(gpio1+GPIO_DATAOUT);
+    pin_status = pins_out & STEPPER_RESET_BIT;
+    if(pin_status) 
+        sprintf(buf, "1\n");
+    else
+        sprintf(buf, "0\n");
+
+    return 2;
+};
+
+static DEVICE_ATTR(stepper_reset, S_IWUSR | S_IRUGO, sys_stepper_reset_show, sys_stepper_reset_store);
+
 
 static ssize_t beagle_pov_write(struct file * file, const char __user * buf, 
                           size_t count, loff_t *ppos) {
@@ -133,9 +180,10 @@ static struct miscdevice beagle_pov = {
 };   
 
 
-
 static int __init beagle_pov_init(void) {
     int ret;
+    u32 pins_oe;
+
     if (!request_mem_region(BASE_SHARED_PRU_MEM, SHARED_PRU_MEM_SIZE, MODULE_NAME)) {
         printk(KERN_INFO  "%s: can't get I/O mem address 1x%lx\n",MODULE_NAME, BASE_SHARED_PRU_MEM);
         return -ENODEV;
@@ -147,13 +195,27 @@ static int __init beagle_pov_init(void) {
         release_mem_region(BASE_SHARED_PRU_MEM, SHARED_PRU_MEM_SIZE);
         printk(KERN_ERR "Unable to register [beagle_pov] misc device \n");
     }
+    ret = device_create_file(beagle_pov.this_device, &dev_attr_stepper_reset);
+    if (ret < 0) {
+        printk(KERN_ERR "failed to create reset /sys endpoint \n");
+    }
+    gpio1 = ioremap(GPIO1, 0x198);
+    
+    //set output pins:
+    pins_oe = ioread32(gpio1+GPIO_OE);
+    rmb();
+    iowrite32(pins_oe || STEPPER_RESET_BIT, gpio1+GPIO_OE);
+    wmb();
+
     return ret;
 }
 
 static void __exit beagle_pov_exit(void) {
+    device_remove_file(beagle_pov.this_device, &dev_attr_stepper_reset);
     misc_deregister(&beagle_pov);
 
     iounmap(shared_pru_mem);
+    iounmap(gpio1);
     release_mem_region(BASE_SHARED_PRU_MEM, SHARED_PRU_MEM_SIZE);
 }
 
