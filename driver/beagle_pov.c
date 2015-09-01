@@ -13,17 +13,20 @@
 
 #define MODULE_NAME "beaglepov"
 #define BASE_SHARED_PRU_MEM  0x4a310000UL
+#define SHARED_PRU_MEM_SIZE  60*3
+#define BASE_PRU0_MEM  0x4a300000UL
+#define PRU_MEM_SIZE 8*1024 
 #define GPIO1 0x4804C000
 #define GPIO_CLEARDATAOUT 0x190
 #define GPIO_SETDATAOUT 0x194
 #define GPIO_DATAOUT 0x13c
 #define GPIO_OE 0x134
-#define SHARED_PRU_MEM_SIZE  60
 
 #define STEPPER_RESET_BIT 1<<17
 //#define SHARED_PRU_MEM_SIZE  12*1024
 
 void __iomem *shared_pru_mem = 0;
+void __iomem *pru0_mem = 0;
 void __iomem *gpio1;
 
 bool ppm_mode = false;
@@ -31,42 +34,21 @@ bool ppm_mode = false;
 
 char* P6 = "P6";
 
-static inline void set_hi_gpio1(u32 pin) {
-    iowrite32(pin, gpio1+GPIO_SETDATAOUT );
-}
+static inline void set_hi_gpio1(u32 pin);
+static inline void set_low_gpio1(u32 pin);
 
-static inline void set_low_gpio1(u32 pin) {
-    iowrite32(pin, gpio1+GPIO_CLEARDATAOUT );
-}
-
-
+static bool is_stepper_running(void);
 
 /* This sysfs entry handles the stepper reset cmd*/
-static ssize_t sys_stepper_reset_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count) {
-    printk(KERN_INFO  "%s: stepper reset : %s\n", MODULE_NAME, buf);
+static ssize_t sys_stepper_reset_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count);
+static ssize_t sys_stepper_reset_show(struct device* dev, struct device_attribute* attr, char* buf);
 
-    if(sysfs_streq("1", buf)) 
-     set_hi_gpio1(STEPPER_RESET_BIT);
-    else if(sysfs_streq("0", buf))
-     set_low_gpio1(STEPPER_RESET_BIT);
-    else 
-      return -EINVAL;
-      
-     return count;
-};
-static ssize_t sys_stepper_reset_show(struct device* dev, struct device_attribute* attr, char* buf) {
-    int pin_status;
-    u32 pins_out = ioread32(gpio1+GPIO_DATAOUT);
-    pin_status = pins_out & STEPPER_RESET_BIT;
-    if(pin_status) 
-        sprintf(buf, "1\n");
-    else
-        sprintf(buf, "0\n");
-
-    return 2;
-};
+/* This sysfs entry handles the stepper init delay cmd*/
+static ssize_t sys_stepper_init_delay_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count);
+static ssize_t sys_stepper_init_delay_show(struct device* dev, struct device_attribute* attr, char* buf);
 
 static DEVICE_ATTR(stepper_reset, S_IWUSR | S_IRUGO, sys_stepper_reset_show, sys_stepper_reset_store);
+static DEVICE_ATTR(stepper_init_delay, S_IWUSR | S_IRUGO, sys_stepper_init_delay_show, sys_stepper_init_delay_store);
 
 
 static ssize_t beagle_pov_write(struct file * file, const char __user * buf, 
@@ -189,6 +171,8 @@ static int __init beagle_pov_init(void) {
         return -ENODEV;
     }
     shared_pru_mem = ioremap(BASE_SHARED_PRU_MEM, SHARED_PRU_MEM_SIZE);
+    pru0_mem = ioremap(BASE_PRU0_MEM, PRU_MEM_SIZE);
+    gpio1 = ioremap(GPIO1, 0x198);
 
     ret = misc_register(&beagle_pov);
     if(ret) {
@@ -199,7 +183,10 @@ static int __init beagle_pov_init(void) {
     if (ret < 0) {
         printk(KERN_ERR "failed to create reset /sys endpoint \n");
     }
-    gpio1 = ioremap(GPIO1, 0x198);
+    ret = device_create_file(beagle_pov.this_device, &dev_attr_stepper_init_delay);
+    if (ret < 0) {
+        printk(KERN_ERR "failed to create reset /sys endpoint \n");
+    }
     
     //set output pins:
     pins_oe = ioread32(gpio1+GPIO_OE);
@@ -212,10 +199,12 @@ static int __init beagle_pov_init(void) {
 
 static void __exit beagle_pov_exit(void) {
     device_remove_file(beagle_pov.this_device, &dev_attr_stepper_reset);
+    device_remove_file(beagle_pov.this_device, &dev_attr_stepper_init_delay);
     misc_deregister(&beagle_pov);
 
-    iounmap(shared_pru_mem);
     iounmap(gpio1);
+    iounmap(pru0_mem);
+    iounmap(shared_pru_mem);
     release_mem_region(BASE_SHARED_PRU_MEM, SHARED_PRU_MEM_SIZE);
 }
 
@@ -223,6 +212,56 @@ static void __exit beagle_pov_exit(void) {
 module_init(beagle_pov_init);
 module_exit(beagle_pov_exit);
 
+static ssize_t sys_stepper_reset_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count) {
+    if(sysfs_streq("1", buf)) 
+     set_hi_gpio1(STEPPER_RESET_BIT);
+    else if(sysfs_streq("0", buf))
+     set_low_gpio1(STEPPER_RESET_BIT);
+    else 
+      return -EINVAL;
+      
+     return count;
+};
+static ssize_t sys_stepper_reset_show(struct device* dev, struct device_attribute* attr, char* buf) {
+    if(is_stepper_running()) 
+        sprintf(buf, "1\n");
+    else
+        sprintf(buf, "0\n");
+
+    return 2;
+};
+static ssize_t sys_stepper_init_delay_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count) {
+    u32 res = 0; 
+    int retval = kstrtouint(buf, 10, &res);
+    if(retval) 
+        return retval; 
+    iowrite32(res, pru0_mem);        
+    printk(KERN_INFO  "%s: delay store: %u \n",MODULE_NAME, res);
+    return count;
+};
+static ssize_t sys_stepper_init_delay_show(struct device* dev, struct device_attribute* attr, char* buf) {
+    u32 val = ioread32(pru0_mem);
+    rmb();
+    printk(KERN_INFO  "%s: delay show : %u \n",MODULE_NAME, val);
+    sprintf(buf, "%u\n", val);
+
+    return strlen(buf);
+};
+
+static bool is_stepper_running() {
+    u32 pins_out = ioread32(gpio1+GPIO_DATAOUT);
+    rmb();
+    return pins_out & STEPPER_RESET_BIT;
+}
+
+
+static inline void set_hi_gpio1(u32 pin) {
+    iowrite32(pin, gpio1+GPIO_SETDATAOUT );
+}
+
+static inline void set_low_gpio1(u32 pin) {
+    iowrite32(pin, gpio1+GPIO_CLEARDATAOUT );
+}
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Zacarias F. Ojeda <zojeda@gmail.com>");
