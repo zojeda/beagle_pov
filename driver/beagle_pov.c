@@ -3,6 +3,7 @@
 #include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
+#include <linux/platform_device.h>
 #include <linux/ioport.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -25,11 +26,11 @@
 #define STEPPER_RESET_BIT 1<<17
 //#define SHARED_PRU_MEM_SIZE  12*1024
 
-void __iomem *shared_pru_mem = 0;
-void __iomem *pru0_mem = 0;
-void __iomem *gpio1;
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Zacarias F. Ojeda <zojeda@gmail.com>");
+MODULE_DESCRIPTION("'beagle_pov' driver");
+MODULE_VERSION("dev");
 
-bool ppm_mode = false;
 
 
 char* P6 = "P6";
@@ -50,6 +51,16 @@ static ssize_t sys_stepper_init_delay_show(struct device* dev, struct device_att
 static DEVICE_ATTR(stepper_reset, S_IWUSR | S_IRUGO, sys_stepper_reset_show, sys_stepper_reset_store);
 static DEVICE_ATTR(stepper_init_delay, S_IWUSR | S_IRUGO, sys_stepper_init_delay_show, sys_stepper_init_delay_store);
 
+struct beagle_pov  {
+    struct platform_device *pdev;
+    void __iomem *shared_pru_mem;
+    void __iomem *pru0_mem;
+    void __iomem *gpio1;
+
+    bool ppm_mode;
+
+} bpov;  
+
 
 static ssize_t beagle_pov_write(struct file * file, const char __user * buf, 
                           size_t count, loff_t *ppos) {
@@ -59,7 +70,7 @@ static ssize_t beagle_pov_write(struct file * file, const char __user * buf,
 
     printk(KERN_INFO  "%s: requested writing %d bytes at pos %llu\n",MODULE_NAME, bytes, *ppos);
 
-    if(ppm_mode) {
+    if(bpov.ppm_mode) {
         kbuf = kmalloc(bytes, GFP_KERNEL);
         //checking header
         if(strncmp(P6, kbuf, 2) != 0) {
@@ -92,7 +103,7 @@ static ssize_t beagle_pov_write(struct file * file, const char __user * buf,
         printk(KERN_INFO  "%s: could not copy %d bytes.\n",MODULE_NAME, bytes);
         return -EFAULT;
     }
-    memcpy_toio(shared_pru_mem+*ppos, kbuf, bytes);
+    memcpy_toio(bpov.shared_pru_mem+*ppos, kbuf, bytes);
     wmb();
 
     *ppos += bytes;
@@ -128,7 +139,7 @@ static ssize_t beagle_pov_read(struct file * file, char __user * buf,
     if(!kbuf)
         return -ENOMEM;
 
-    memcpy_fromio(kbuf, shared_pru_mem+*ppos, bytes);
+    memcpy_fromio(kbuf, bpov.shared_pru_mem+*ppos, bytes);
     rmb();
 
     
@@ -150,62 +161,98 @@ static const struct file_operations beagle_pov_ops = {
     .write  = beagle_pov_write,
 };
 
-static struct miscdevice beagle_pov = {
+static struct miscdevice beagle_pov_device = {
     //let the kernel to pick a minor number for us
     MISC_DYNAMIC_MINOR, 
-    
     //device name: it will be added by udev as /dev/beagle_pov
     MODULE_NAME, 
-    
     //file operations defining the device behaviour
     &beagle_pov_ops
 };   
+    
 
-
-static int __init beagle_pov_init(void) {
+static int beagle_pov_probe(struct platform_device *pdev) {
     int ret;
     u32 pins_oe;
+
+    printk(KERN_INFO  "%s: probe\n",MODULE_NAME);
 
     if (!request_mem_region(BASE_SHARED_PRU_MEM, SHARED_PRU_MEM_SIZE, MODULE_NAME)) {
         printk(KERN_INFO  "%s: can't get I/O mem address 1x%lx\n",MODULE_NAME, BASE_SHARED_PRU_MEM);
         return -ENODEV;
     }
-    shared_pru_mem = ioremap(BASE_SHARED_PRU_MEM, SHARED_PRU_MEM_SIZE);
-    pru0_mem = ioremap(BASE_PRU0_MEM, PRU_MEM_SIZE);
-    gpio1 = ioremap(GPIO1, 0x198);
+    bpov.shared_pru_mem = ioremap(BASE_SHARED_PRU_MEM, SHARED_PRU_MEM_SIZE);
+    bpov.pru0_mem = ioremap(BASE_PRU0_MEM, PRU_MEM_SIZE);
+    bpov.gpio1 = ioremap(GPIO1, 0x198);
 
-    ret = misc_register(&beagle_pov);
+    ret = misc_register(&beagle_pov_device); 
+    printk(KERN_INFO  "%s: misc device registered\n",MODULE_NAME);
     if(ret) {
         release_mem_region(BASE_SHARED_PRU_MEM, SHARED_PRU_MEM_SIZE);
         printk(KERN_ERR "Unable to register [beagle_pov] misc device \n");
     }
-    ret = device_create_file(beagle_pov.this_device, &dev_attr_stepper_reset);
+    ret = device_create_file(beagle_pov_device.this_device, &dev_attr_stepper_reset);
     if (ret < 0) {
         printk(KERN_ERR "failed to create reset /sys endpoint \n");
     }
-    ret = device_create_file(beagle_pov.this_device, &dev_attr_stepper_init_delay);
+    ret = device_create_file(beagle_pov_device.this_device, &dev_attr_stepper_init_delay);
     if (ret < 0) {
         printk(KERN_ERR "failed to create reset /sys endpoint \n");
     }
     
     //set output pins:
-    pins_oe = ioread32(gpio1+GPIO_OE);
+    pins_oe = ioread32(bpov.gpio1+GPIO_OE);
     rmb();
-    iowrite32(pins_oe || STEPPER_RESET_BIT, gpio1+GPIO_OE);
+    iowrite32(pins_oe || STEPPER_RESET_BIT, bpov.gpio1+GPIO_OE);
     wmb();
 
-    return ret;
+    return 0;
+}
+
+static int beagle_pov_remove(struct platform_device *pdev) {
+    struct device *dev = beagle_pov_device.this_device;
+
+    device_remove_file(dev, &dev_attr_stepper_reset);
+    device_remove_file(dev, &dev_attr_stepper_init_delay);
+    misc_deregister(&beagle_pov_device);
+
+    iounmap(bpov.gpio1);
+    iounmap(bpov.pru0_mem);
+    iounmap(bpov.shared_pru_mem);
+    release_mem_region(BASE_SHARED_PRU_MEM, SHARED_PRU_MEM_SIZE);
+    return 0;
+}
+
+
+
+static const struct of_device_id beagle_pov_dt_ids[] = {
+    { .compatible = "beagle_pov,beagle_pov", .data = NULL, },
+    {},
+};
+
+MODULE_DEVICE_TABLE(of, beagle_pov_dt_ids);
+
+static struct platform_driver beagle_pov_driver = {
+    .driver = {
+       .name   = "beagle_pov",
+       .owner  = THIS_MODULE,
+       .of_match_table = beagle_pov_dt_ids,
+     },
+    .probe  = beagle_pov_probe,
+    .remove = beagle_pov_remove,
+};
+
+
+
+static int __init beagle_pov_init(void) {
+        printk(KERN_INFO "beagle_pov loaded\n");
+        platform_driver_register(&beagle_pov_driver);
+        return 0;
 }
 
 static void __exit beagle_pov_exit(void) {
-    device_remove_file(beagle_pov.this_device, &dev_attr_stepper_reset);
-    device_remove_file(beagle_pov.this_device, &dev_attr_stepper_init_delay);
-    misc_deregister(&beagle_pov);
-
-    iounmap(gpio1);
-    iounmap(pru0_mem);
-    iounmap(shared_pru_mem);
-    release_mem_region(BASE_SHARED_PRU_MEM, SHARED_PRU_MEM_SIZE);
+    printk(KERN_INFO "beagle_pov unloaded\n");
+    platform_driver_unregister(&beagle_pov_driver);
 }
 
 
@@ -235,12 +282,12 @@ static ssize_t sys_stepper_init_delay_store(struct device* dev, struct device_at
     int retval = kstrtouint(buf, 10, &res);
     if(retval) 
         return retval; 
-    iowrite32(res, pru0_mem);        
+    iowrite32(res, bpov.pru0_mem);        
     printk(KERN_INFO  "%s: delay store: %u \n",MODULE_NAME, res);
     return count;
-};
+};
 static ssize_t sys_stepper_init_delay_show(struct device* dev, struct device_attribute* attr, char* buf) {
-    u32 val = ioread32(pru0_mem);
+    u32 val = ioread32(bpov.pru0_mem);
     rmb();
     printk(KERN_INFO  "%s: delay show : %u \n",MODULE_NAME, val);
     sprintf(buf, "%u\n", val);
@@ -249,23 +296,19 @@ static ssize_t sys_stepper_init_delay_show(struct device* dev, struct device_att
 };
 
 static bool is_stepper_running() {
-    u32 pins_out = ioread32(gpio1+GPIO_DATAOUT);
+    u32 pins_out = ioread32(bpov.gpio1+GPIO_DATAOUT);
     rmb();
     return pins_out & STEPPER_RESET_BIT;
 }
 
 
 static inline void set_hi_gpio1(u32 pin) {
-    iowrite32(pin, gpio1+GPIO_SETDATAOUT );
+    iowrite32(pin, bpov.gpio1+GPIO_SETDATAOUT );
 }
 
 static inline void set_low_gpio1(u32 pin) {
-    iowrite32(pin, gpio1+GPIO_CLEARDATAOUT );
+    iowrite32(pin, bpov.gpio1+GPIO_CLEARDATAOUT );
 }
 
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Zacarias F. Ojeda <zojeda@gmail.com>");
-MODULE_DESCRIPTION("'beagle_pov' driver");
-MODULE_VERSION("dev");
 
 
