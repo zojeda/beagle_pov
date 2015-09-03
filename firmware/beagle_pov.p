@@ -4,8 +4,8 @@
 
 #include "pru.hp"
 
-#define PIN_OUT r30.t5 //P9.27
-#define IMG_WIDTH   60
+#define LEDS_PIN r30.t5 //P9.27
+#define IMG_WIDTH   23*3
 
 
 #define T0H 40
@@ -23,6 +23,9 @@
 
 #define CTPPR0      0x28
 
+//stepper definitions
+#define STEPS_DELAY     0x00000000
+#define STEPPER_PIN     r30.t7 //P9.25
 
 .macro Delay
   .mparam cycles //us*100
@@ -35,21 +38,21 @@
 .endm
 
 .macro SendHI
-    SET PIN_OUT
+    SET LEDS_PIN
     Delay T1H
-    CLR PIN_OUT
+    CLR LEDS_PIN
     Delay T1L
 .endm
 
 .macro SendLOW
-    SET PIN_OUT
+    SET LEDS_PIN
     Delay T0H
-    CLR PIN_OUT
+    CLR LEDS_PIN
     Delay T0L
 .endm
 
 .macro Latch
-    CLR PIN_OUT
+    CLR LEDS_PIN
     Delay T0Latch
 .endm
 
@@ -72,7 +75,15 @@
   END:
 .endm
 
-
+.macro Step
+    MOV     r0, STEPS_DELAY
+    LBBO    r2, r0, 0, 4
+    SET     STEPPER_PIN
+    Delay   r2      
+    CLR     STEPPER_PIN
+    Delay   r2      
+.endm
+    
 START:
     // Clear SYSCFG[STANDBY_INIT] to enable OCP master port:
     lbco r0, REG_SYSCFG, 4, 4  // These three instructions are required
@@ -85,6 +96,7 @@ START:
     SBBO    r0, r1, 0, 4
 
 BEGIN_LINE:
+    Step
     MOV     r4, 0
 
 PIXEL:

@@ -1,7 +1,7 @@
 .origin 0
 .entrypoint START
 
-#define PIN_OUT         r30.t5 //P9.27
+#define PIN_OUT         r30.t7 //P9.25
 #define STEPS_DELAY     0x00000000
 #define STEPS_NUMBER    0x00000004 
 #define STEP_DELAY      800000

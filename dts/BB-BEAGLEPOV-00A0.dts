@@ -36,8 +36,8 @@
 
 			pru_pru_pins: pinmux_pru_pru_pins {
 				pinctrl-single,pins = <
-					0x1ac 0x5	/* P9 25 mcasp0_ahclkx.pr1_pru0_pru_r30_r7, MODE5 | OUTPUT | PULLDOWN  */
-					0x1a4 0x5	/* P9 27 mcasp0_fsr.pr1_pru0_pru_r30_5, MODE5 | OUTPUT | PULLDOWN */
+					0x1ac 0x25	/* P9 25 mcasp0_ahclkx.pr1_pru0_pru_r30_r7, MODE5 | OUTPUT | PULLDOWN  */
+					0x1a4 0x25	/* P9 27 mcasp0_fsr.pr1_pru0_pru_r30_5, MODE5 | OUTPUT | PULLDOWN */
 				>;
 			};
 		};
@@ -46,32 +46,26 @@
     fragment@1 {
         target = <&ocp>;
         __overlay__ {
-            /* avoid stupid warning */
-            #address-cells = <1>;
-            #size-cells = <1>;
-            prurproc {
-                compatible = "ti,pru-rproc";
-
-                pinctrl-names = "default";
-                pinctrl-0 = <&pru_pru_pins>;
-
-                ti,hwmods = "pruss";
-                ti,deassert-hard-reset = "pruss", "pruss";
-                reg = <0x4a300000 0x080000>;
-                ti,pintc-offset = <0x20000>;
-                interrupt-parent = <&intc>;
+            beaglepov_ctr_gpio_pins_pinmux {
+                compatible = "bone-pinmux-helper";
                 status = "okay";
-                interrupts = <20 21 22 23 24 25 26 27>;
-                pru0 {
-                    pru-index = <0>;
-                    firmware-bin;
-                    firmware = "beagle_pov";
-                };
+                pinctrl-names = "default";
+                pinctrl-0 = <&beaglepov_ctr_gpio_pins>;
             };
             beagle_pov {
                 compatible = "beagle_pov,beagle_pov";
                 status = "okay";
             };
+
         };
     };
+	fragment@2 {
+		target = <&pruss>;
+		__overlay__ {
+			status = "okay";
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&pru_pru_pins>;
+		};
+	};
 };
